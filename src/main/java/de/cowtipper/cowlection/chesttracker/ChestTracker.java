@@ -1,6 +1,8 @@
 package de.cowtipper.cowlection.chesttracker;
 
+import com.google.gson.reflect.TypeToken;
 import de.cowtipper.cowlection.Cowlection;
+import de.cowtipper.cowlection.config.ChestTrackerStorage;
 import de.cowtipper.cowlection.data.DataHelper;
 import de.cowtipper.cowlection.data.HySkyBlockStats;
 import de.cowtipper.cowlection.util.ApiUtils;
@@ -9,16 +11,18 @@ import de.cowtipper.cowlection.util.MooChatComponent;
 import net.minecraft.init.Blocks;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NBTTagCompound;
-import net.minecraft.nbt.NBTTagList;
-import net.minecraft.nbt.NBTTagString;
+import net.minecraft.nbt.*;
 import net.minecraft.util.BlockPos;
 import net.minecraft.util.EnumChatFormatting;
 import net.minecraft.util.EnumFacing;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.common.util.Constants;
 
+import java.lang.reflect.Type;
 import java.util.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
 
 public class ChestTracker {
     public static long lastBazaarUpdate;
@@ -31,9 +35,35 @@ public class ChestTracker {
     private HyBazaarData bazaarCache;
     private LowestBinsCache lowestBinsCache;
     private final Cowlection main;
+    private static final ExecutorService pool = Executors.newCachedThreadPool();
 
     public ChestTracker(Cowlection main) {
         this.main = main;
+
+        if (!ChestTrackerStorage.stringDoubleChestCache.isEmpty()) {
+            Type collectionType = new TypeToken<Map<Long, String>>() {}.getType();
+            Map<Long, String> tempDoubleChestCache = GsonUtils.fromJson(ChestTrackerStorage.stringDoubleChestCache, collectionType);
+            for (Map.Entry<Long, String> entry : tempDoubleChestCache.entrySet()) {
+                this.doubleChestCache.put(BlockPos.fromLong(entry.getKey()), EnumFacing.byName(entry.getValue()));
+            }
+        }
+
+        if (!ChestTrackerStorage.stringChestCache.isEmpty()) {
+            Type collectionType = new TypeToken<Map<Long, List<String>>>() {}.getType();
+            Map<Long, List<String>> tempChestCache = GsonUtils.fromJson(ChestTrackerStorage.stringChestCache, collectionType);
+            for (Map.Entry<Long, List<String>> entry : tempChestCache.entrySet()) {
+                List<ItemStack> tempStack = new ArrayList<>();
+                for (String str : entry.getValue()) {
+                    try {
+                        tempStack.add(ItemStack.loadItemStackFromNBT(JsonToNBT.getTagFromJson(str)));
+                    } catch (NBTException e) {
+                        e.printStackTrace();
+                    }
+                }
+                this.chestCache.put(BlockPos.fromLong(entry.getKey()), tempStack);
+            }
+        }
+
         refreshPriceCache();
         chestInteractionListener = new ChestInteractionListener(main);
         MinecraftForge.EVENT_BUS.register(chestInteractionListener);
@@ -41,8 +71,21 @@ public class ChestTracker {
 
     public void analyzeResults() {
         Map<String, ItemData> itemCounts = new HashMap<>();
+        List<String> ChestItemNBT = new ArrayList<>();
+
         for (List<ItemStack> chestContents : chestCache.values()) {
             for (ItemStack item : chestContents) {
+                NBTTagCompound nbt = item.serializeNBT();
+                ChestItemNBT.add(GsonUtils.toJson(nbt));
+//                String result = nbt.toString().replace("[", "{").replace("]", "}").replaceAll("[0-9]+ bytes", "");
+//                try {
+//                    Map map = GsonUtils.fromJson(result, Map.class);
+//                    ChestItemNBT.add(new Gson().toJson(map));
+//                } catch (JsonSyntaxException e) {
+//                    System.out.println(nbt);
+//                    e.printStackTrace();
+//                }
+
                 String key = item.hasDisplayName() ? item.getDisplayName() : item.getUnlocalizedName();
 
                 boolean isAmbiguousItem = false;
@@ -203,8 +246,10 @@ public class ChestTracker {
             } else {
                 doubleChestCache.put(mainChestPos, otherChestFacing.getOpposite());
             }
+            pool.execute(this::buildDoubleCache);
         }
         chestCache.put(mainChestPos, chestContents);
+        pool.execute(this::buildCache);
     }
 
     public void removeChest(BlockPos chestPos, EnumFacing otherChestFacing) {
@@ -220,9 +265,43 @@ public class ChestTracker {
             } else {
                 doubleChestCache.remove(mainChestPos);
             }
+            pool.execute(this::buildDoubleCache);
         }
         chestCache.remove(mainChestPos);
         chestsWithWantedItem.remove(mainChestPos);
+        pool.execute(this::buildCache);
+    }
+
+    private void buildDoubleCache() {
+        Map<Long, String> doubleCacheStringBuilder = new HashMap<>();
+        for (Map.Entry<BlockPos, EnumFacing> entry : doubleChestCache.entrySet()) {
+            doubleCacheStringBuilder.put(entry.getKey().toLong(), entry.getValue().getName());
+        }
+        Cowlection.getInstance().getChestStorage().setDoubleChestCache(GsonUtils.toJson(doubleCacheStringBuilder));
+    }
+
+    private void buildCache() {
+        Map<Long, List<String>> cacheStringBuilder = new HashMap<>();
+        for (Map.Entry<BlockPos, List<ItemStack>> entry : chestCache.entrySet()) {
+            cacheStringBuilder.put(
+                    entry.getKey().toLong(),
+                    entry.getValue().stream().map(
+                            x -> x.serializeNBT().toString()
+                    ).collect(Collectors.toList())
+            );
+        }
+        Cowlection.getInstance().getChestStorage().setChestCache(GsonUtils.toJson(cacheStringBuilder));
+//        StringBuilder sb = new StringBuilder();
+//        sb.append('{');
+//        for (Map.Entry<BlockPos, List<ItemStack>> entry : chestCache.entrySet()) {
+//            if (sb.length() != 1) sb.append(',');
+//            sb.append(entry.getKey().toLong());
+//            sb.append(":[");
+//            for (ItemStack stack : entry.getValue()) sb.append(stack.serializeNBT());
+//            sb.append(']');
+//        }
+//        sb.deleteCharAt(sb.length()-1);
+//        sb.append('}');
     }
 
     private boolean isOtherChestCached(BlockPos chestPos, EnumFacing otherChestFacing) {

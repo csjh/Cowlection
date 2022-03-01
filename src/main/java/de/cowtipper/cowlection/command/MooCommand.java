@@ -664,10 +664,15 @@ public class MooCommand extends CommandBase {
         } else if (args.length == 2 && args[1].equalsIgnoreCase("stop")) {
             boolean disabledChestTracker = main.disableChestTracker();
             if (disabledChestTracker) {
-                main.getChatHelper().sendMessage(EnumChatFormatting.GREEN, "Disabled chest tracker and cleared chest cache!");
+                main.getChatHelper().sendMessage(EnumChatFormatting.GREEN, "Disabled chest tracker!");
             } else {
                 main.getChatHelper().sendMessage(EnumChatFormatting.YELLOW, "Chest tracker wasn't even enabled...");
             }
+        } else if (args.length == 2 && args[1].equalsIgnoreCase("clear")) {
+            Cowlection.getInstance().getChestStorage().setChestCache("");
+            Cowlection.getInstance().getChestStorage().setDoubleChestCache("");
+            main.disableChestTracker();
+            main.getChatHelper().sendMessage(EnumChatFormatting.GREEN, "Disabled chest tracker and cleared chest cache!");
         } else {
             String analyzeCommand = "/" + getCommandName() + " analyzeChests";
             main.getChatHelper().sendMessage(new MooChatComponent(Cowlection.MODNAME + " chest tracker & analyzer").gold().bold()

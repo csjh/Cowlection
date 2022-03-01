@@ -2,6 +2,7 @@ package de.cowtipper.cowlection;
 
 import de.cowtipper.cowlection.chesttracker.ChestTracker;
 import de.cowtipper.cowlection.command.*;
+import de.cowtipper.cowlection.config.ChestTrackerStorage;
 import de.cowtipper.cowlection.config.CredentialStorage;
 import de.cowtipper.cowlection.config.MooConfig;
 import de.cowtipper.cowlection.handler.DungeonCache;
@@ -43,6 +44,7 @@ public class Cowlection {
     private File modOutDir;
     private MooConfig config;
     private CredentialStorage moo;
+    private ChestTrackerStorage chestStorage;
     private Rules partyFinderRules;
     private FriendsHandler friendsHandler;
     private VersionChecker versionChecker;
@@ -67,6 +69,7 @@ public class Cowlection {
 
         friendsHandler = new FriendsHandler(this, new File(configDir, "friends.json"));
         moo = new CredentialStorage(new Configuration(new File(configDir, "do-not-share-me-with-other-players.cfg")));
+        chestStorage = new ChestTrackerStorage(new Configuration(new File(configDir, "chestStorage.cfg")));
         partyFinderRules = new Rules(this, new File(configDir, "partyfinder-rules.json"));
         config = new MooConfig(this, new Configuration(new File(configDir, MODID + ".cfg"), "2"));
     }
@@ -101,6 +104,10 @@ public class Cowlection {
 
     public MooConfig getConfig() {
         return config;
+    }
+
+    public ChestTrackerStorage getChestStorage() {
+        return chestStorage;
     }
 
     public CredentialStorage getMoo() {
